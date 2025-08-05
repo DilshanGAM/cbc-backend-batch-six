@@ -1,5 +1,6 @@
 import Order from "../models/order.js";
 import Product from "../models/product.js";
+import { isAdmin } from "./userController.js";
 
 export async function createOrder(req, res) {
 	try {
@@ -81,6 +82,9 @@ export async function createOrder(req, res) {
 }
 
 export async function getOrders(req, res) {
+	const page = parseInt(req.params.page) || 1;
+	const limit = parseInt(req.params.limit) || 10;
+
 	if (req.user == null) {
 		res.status(401).json({ message: "Please login to view orders" });
 		return;
@@ -88,14 +92,61 @@ export async function getOrders(req, res) {
 
 	try {
 		if (req.user.role == "admin") {
-            const orders = await Order.find().sort({ date: -1 });
-            res.json(orders);
+
+			const orderCount = await Order.countDocuments();
+
+			const totalPages = Math.ceil(orderCount / limit);// Calculate total pages by rounding the division of total orders by limit
+
+            const orders = await Order.find().skip((page-1) *limit).limit(limit).sort({ date: -1 });
+
+            res.json({
+				orders: orders,
+				totalPages: totalPages,
+			});
 		}else{
-            const orders = await Order.find({ email: req.user.email }).sort({ date: -1 });
-            res.json(orders);
+			const orderCount = await Order.countDocuments({ email: req.user.email });
+			const totalPages = Math.ceil(orderCount / limit);
+            const orders = await Order.find({ email: req.user.email }).skip((page-1) * limit).limit(limit).sort({ date: -1 });
+            res.json({
+				orders: orders,
+				totalPages: totalPages,
+			});
         }
 	} catch (error) {
 		console.error("Error fetching orders:", error);
 		res.status(500).json({ message: "Failed to fetch orders" });
+	}
+}
+export function updateOrder(req,res){
+	if(isAdmin(req)){
+		const orderId = req.params.orderId;
+		const status = req.body.status;
+		const notes = req.body.notes;
+
+		Order.findOneAndUpdate(
+			{ orderID: orderId },
+			{ status: status , notes: notes },
+			{ new: true }
+		).then(
+			(updatedOrder) => {
+				if (updatedOrder) {
+					res.json({
+						message: "Order updated successfully",
+						order: updatedOrder,
+					});
+				} else {
+					res.status(404).json({ message: "Order not found" });
+				}
+			}
+		).catch(
+			(error) => {
+				console.error("Error updating order:", error);
+				res.status(500).json({ message: "Failed to update order" });
+			}
+		);
+	}else{
+		res.status(403).json({
+			message : "You are not authorized to update orders"
+		})
 	}
 }
